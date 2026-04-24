@@ -40,7 +40,7 @@ from storage import (
 )
 
 
-APP_TITLE = "拆书细纲生成器"
+APP_TITLE = "拆书细纲生成器-问题反馈QQ1223156656"
 
 
 def format_list(values: list) -> str:
@@ -351,7 +351,7 @@ class ChaishuApp:
                 self.viewer.tag_add("h2", start, end)
             elif line.lstrip().startswith("- "):
                 self.viewer.tag_add("bullet", start, end)
-            for match in re.finditer(r"`[^`]+`|剧情主要内容|细节剧情点|读者看点", line):
+            for match in re.finditer(r"`[^`]+`|剧情主要内容|细节剧情点|情节分析|爽点分析|节奏控制|钩子设计|读者看点", line):
                 self.viewer.tag_add("label", f"{line_number}.{match.start()}", f"{line_number}.{match.end()}")
 
     def increase_editor_font(self) -> None:
