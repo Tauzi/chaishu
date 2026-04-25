@@ -23,7 +23,10 @@ BOOKS_DIR = DATA_DIR / "books"
 CONFIG_PATH = DATA_DIR / "config.json"
 STATE_PATH = DATA_DIR / "state.json"
 
-CHAPTER_RE = re.compile(r"(?m)^\s*(第[一二三四五六七八九十百千万零〇两\d]+[章节卷集部回][^\n\r]{0,60})\s*$")
+CHAPTER_NUMBER = r"第[一二三四五六七八九十百千万零〇两\d]+"
+CHAPTER_RE = re.compile(
+    rf"(?m)^\s*({CHAPTER_NUMBER}(?:[章回][^\n\r]{{0,60}}|[集部卷][\s：:、.．【（(《-][^\n\r]{{0,60}}|节(?:\s|[：:、.．【（(《-])[^\n\r]{{0,60}}))\s*$"
+)
 
 
 @dataclass
@@ -63,9 +66,6 @@ def split_by_chapter(text: str) -> list[Chapter]:
     if not matches:
         return [Chapter("全文", text.strip())]
     chapters: list[Chapter] = []
-    prefix = text[: matches[0].start()].strip()
-    if prefix:
-        chapters.append(Chapter("序章", prefix))
     for index, match in enumerate(matches):
         title = match.group(1).strip()
         start = match.start()
@@ -155,6 +155,41 @@ def unique_dir(parent: Path, name: str) -> Path:
 
 def outline_filename(index: int, chapter: Chapter) -> str:
     return f"{index:04d}_{safe_name(chapter.title, 'chapter')}_拆书细纲.md"
+
+
+def main_content_collection_path(project: BookProject) -> Path:
+    return project.output_dir / f"{safe_name(project.name, 'book')}_剧情主要内容合集.md"
+
+
+def extract_main_content(outline: str) -> str:
+    lines = outline.splitlines()
+    collecting = False
+    content: list[str] = []
+    for line in lines:
+        stripped = line.strip()
+        if re.fullmatch(r"##\s*剧情主要内容\s*", stripped):
+            collecting = True
+            content = []
+            continue
+        if collecting and re.match(r"##\s+", stripped):
+            break
+        if collecting:
+            content.append(line.rstrip())
+    return "\n".join(content).strip()
+
+
+def write_main_content_collection(project: BookProject) -> Path:
+    parts = [f"# {project.name} 剧情主要内容合集"]
+    for index, chapter in enumerate(project.chapters, start=1):
+        if not chapter.outline:
+            continue
+        main_content = extract_main_content(chapter.outline)
+        if not main_content:
+            continue
+        parts.append(f"## {index}. {chapter.title}\n\n{main_content}")
+    path = main_content_collection_path(project)
+    path.write_text("\n\n".join(parts).strip() + "\n", encoding="utf-8")
+    return path
 
 
 def empty_character_registry() -> dict:

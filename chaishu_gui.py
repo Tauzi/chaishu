@@ -37,6 +37,7 @@ from storage import (
     save_character_registry,
     save_config,
     save_state,
+    write_main_content_collection,
 )
 
 
@@ -104,6 +105,7 @@ class ChaishuApp:
         self.character_items: dict[str, dict] = {}
         self.events: queue.Queue[tuple[str, object]] = queue.Queue()
         self.current_chapter_index: int | None = None
+        self.viewer_mode = "chapter"
         self.running = False
         self.paused = False
         self.pause_event = threading.Event()
@@ -183,6 +185,7 @@ class ChaishuApp:
         ttk.Button(editor_bar, text="A+", width=4, command=self.increase_editor_font).pack(side=LEFT, padx=2)
         ttk.Button(editor_bar, text="保存当前细纲", command=self.save_current_outline).pack(side=LEFT, padx=(8, 2))
         ttk.Button(editor_bar, text="重新高亮", command=self.highlight_editor).pack(side=LEFT, padx=2)
+        ttk.Button(editor_bar, text="查看本书剧情主要内容合集", command=self.open_main_content_collection).pack(side=LEFT, padx=2)
         ttk.Label(editor_bar, textvariable=self.editor_status).pack(side=RIGHT)
 
         self.editor_font = tkfont.Font(family="Microsoft YaHei UI", size=self.editor_font_size.get())
@@ -281,6 +284,21 @@ class ChaishuApp:
         DATA_DIR.mkdir(parents=True, exist_ok=True)
         os.startfile(DATA_DIR)
 
+    def open_main_content_collection(self) -> None:
+        if not self.project:
+            messagebox.showwarning(APP_TITLE, "请先导入或选择一本书。")
+            return
+        path = write_main_content_collection(self.project)
+        content = path.read_text(encoding="utf-8", errors="ignore")
+        self.viewer_mode = "collection"
+        self.current_chapter_index = None
+        self.chapter_list.selection_remove(*self.chapter_list.selection())
+        self.viewer.delete("1.0", END)
+        self.viewer.insert(END, content)
+        self.viewer.edit_modified(False)
+        self.editor_status.set("正在查看本书主要内容合集")
+        self.highlight_editor()
+
     def restore_layout(self) -> None:
         state = load_state()
         positions = state.get("sash_positions")
@@ -324,6 +342,7 @@ class ChaishuApp:
             return
         index = int(selected[0])
         self.current_chapter_index = index
+        self.viewer_mode = "chapter"
         save_state(self.project.book_dir, index)
         chapter = self.project.chapters[index]
         self.viewer.delete("1.0", END)
@@ -373,6 +392,9 @@ class ChaishuApp:
                 self.editor_status.set("未保存")
 
     def save_current_outline(self) -> None:
+        if self.viewer_mode == "collection":
+            messagebox.showinfo(APP_TITLE, "当前显示的是主要内容合集，请回到章节后再保存细纲。")
+            return
         if not self.project or self.current_chapter_index is None:
             messagebox.showwarning(APP_TITLE, "请先选择一个章节。")
             return
@@ -384,6 +406,7 @@ class ChaishuApp:
         chapter.outline = content
         output_path = self.project.output_dir / outline_filename(self.current_chapter_index + 1, chapter)
         output_path.write_text(content, encoding="utf-8")
+        write_main_content_collection(self.project)
         self.chapter_list.set(str(self.current_chapter_index), "status", "已完成")
         self.viewer.edit_modified(False)
         self.editor_status.set("已保存")
@@ -557,6 +580,7 @@ class ChaishuApp:
             output_path = self.project.output_dir / outline_filename(index, chapter)
             if self.only_empty.get() and output_path.exists():
                 chapter.outline = output_path.read_text(encoding="utf-8", errors="ignore")
+                write_main_content_collection(self.project)
                 self.events.put(("done", index - 1))
                 continue
             self.events.put(("working", index - 1))
@@ -566,6 +590,7 @@ class ChaishuApp:
                 outline = normalize_outline_text(call_outline(api_key, base_url, model, chapter.title, chapter.text, context))
                 output_path.write_text(outline, encoding="utf-8")
                 chapter.outline = outline
+                write_main_content_collection(self.project)
                 self.events.put(("status", f"正在更新角色信息 {index}/{len(self.project.chapters)}：{chapter.title}"))
                 updated_context = build_outline_context(self.project.chapters, index, self.character_registry)
                 self.character_registry = update_character_registry(
